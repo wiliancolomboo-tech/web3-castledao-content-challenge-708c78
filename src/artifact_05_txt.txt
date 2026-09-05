@@ -1,0 +1,18 @@
+┌────────────────────────────┬──────────────────────────────────┬───────────────────────────────────────────┐
+│ Attack Vector              │ Threat Classification            │ Technical Defense Implementation          │
+├────────────────────────────┼──────────────────────────────────┼───────────────────────────────────────────┤
+│ PDA Seed Hijacking         │ High: Protocol Impersonation     │ Strict canonical derivation with bump     │
+│                            │                                  │ verification & explicit seed constraints. │
+├────────────────────────────┼──────────────────────────────────┼───────────────────────────────────────────┤
+│ Integer Overflow / Flash   │ Critical: Treasury Drain         │ Rust checked math (`checked_add`,         │
+│ Inflation                  │                                  │ `checked_mul`) with explicit precision.   │
+├────────────────────────────┼──────────────────────────────────┼───────────────────────────────────────────┤
+│ Plutocratic Sybil Voting   │ Medium: Content Spam / Exploits  │ Quadratic voting weight sqrt(stake)      │
+│                            │                                  │ requires exponentially higher capital.    │
+├────────────────────────────┼──────────────────────────────────┼───────────────────────────────────────────┤
+│ Reentrancy / Double-Claim  │ High: Repeated Yield Extraction  │ State cleared BEFORE CPI invocation;      │
+│                            │                                  │ no arbitrary program interactions.        │
+├────────────────────────────┼──────────────────────────────────┼───────────────────────────────────────────┤
+│ Fake Token Vault Attack    │ Critical: Vault Theft            │ Hard constraint checking between          │
+│                            │                                  │ `realm.vault` and AccountInfo address.    │
+└────────────────────────────┴──────────────────────────────────┴───────────────────────────────────────────┘
