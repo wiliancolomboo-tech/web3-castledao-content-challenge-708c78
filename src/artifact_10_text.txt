@@ -1,9 +1,8 @@
-CastleDAO Sovereign Realm & Autonomous Content Test Suite
-    ✔ 1. Initializes Castle Realm Citadel and PDA Vault (482ms)
-    ✔ 2. Stakes Recruits into Defense Matrix (312ms)
-    ✔ 3. Accrues and Claims Quest Yield (3054ms)
-    ✔ 4. Submits Community Lore / Content Bounty (295ms)
-    ✔ 5. Curates Content via Quadratic Staking Votes (288ms)
-    ✔ 6. Finalizes Bounty and Pays Creator Post-Timelock (2540ms)
+castledao-fortress
+    ✔ 1. Initializes the Fortress and associated Vault PDA (418ms)
+    ✔ 2. Stakes Garrison tokens and tracks state via lazy accumulator (402ms)
+    ✔ 3. Executes Siege: inflicts mitigated damage on fortress walls (451ms)
+    ✔ 4. Prevents immediate re-siege within cooldown window (Security Guard check) (182ms)
+    ✔ 5. Allows defenders to repair damaged fortress walls (398ms)
 
-  6 passing (7.0s)
+  5 passing (2s)

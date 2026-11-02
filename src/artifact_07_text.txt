@@ -1,0 +1,7 @@
+CastleDAO Content Challenge Engine Tests
+    ✔ 1. Initializes Challenge with Escrow Bounty (412ms)
+    ✔ 2. Accepts Creator Submission with Staked Anti-Spam Bond (385ms)
+    ✔ 3. Prevents Double Voting by the Same Curator (520ms)
+    ✔ 4. Settles Submission, Distributes Scaled Reward, and Tips Keeper (470ms)
+
+  4 passing (1.8s)

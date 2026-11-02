@@ -1,0 +1,61 @@
+flowchart TD
+    %% Global Styling
+    classDef admin fill:#1E293B,stroke:#38BDF8,stroke-width:2px,color:#F8FAFC;
+    classDef creator fill:#0F172A,stroke:#A855F7,stroke-width:2px,color:#F8FAFC;
+    classDef curator fill:#0F172A,stroke:#EC4899,stroke-width:2px,color:#F8FAFC;
+    classDef pda fill:#1E1B4B,stroke:#6366F1,stroke-width:2px,color:#EEF2FF;
+    classDef program fill:#042F2E,stroke:#14B8A6,stroke-width:2px,color:#CCFBF1;
+    classDef keeper fill:#292524,stroke:#F59E0B,stroke-width:2px,color:#FEF3C7;
+    classDef security fill:#450A0A,stroke:#EF4444,stroke-width:2px,color:#FEE2E2;
+
+    %% Actors
+    Admin["CastleDAO Authority (Deployer)"]:::admin
+    Creator["Content Creator / Contributor"]:::creator
+    Curator["Staked DAO Curator"]:::curator
+    Keeper["Crank Keeper / Bot"]:::keeper
+
+    %% Core Program
+    subgraph ProgramBoundary ["Solana Runtime: CastleDAO Content Engine"]
+        Engine["Anchor Program: castledao_content"]:::program
+
+        %% PDAs
+        subgraph StateAccounts ["Program Derived Addresses (PDAs)"]
+            Challenge["Challenge PDA<br/>seeds=[b'challenge', id]"]:::pda
+            Vault["Challenge Vault (SOL/SPL)<br/>seeds=[b'vault', challenge.key()]"]:::pda
+            Submission["Submission PDA<br/>seeds=[b'submission', challenge.key(), creator]"]:::pda
+            VoteRecord["Curator Vote PDA<br/>seeds=[b'vote', submission.key(), curator]"]:::pda
+        end
+
+        %% Security & Guards
+        subgraph SecurityGuards ["On-Chain Security & Validation Guards"]
+            SignerCheck{"Constraint: Signer Valid?"}:::security
+            EpochGuard{"Slot Guard: Active Window?"}:::security
+            BondCheck{"Guard: Bond Escrow Matched?"}:::security
+            DoubleVoteGuard{"Guard: Has Curated Already?"}:::security
+            MathGuard{"Guard: Safe Fixed-Point Math?"}:::security
+        end
+    end
+
+    %% Interactions
+    Admin -->|"1. initialize_challenge(id, bond, duration, reward_pool)"| Engine
+    Engine -->|"Derive PDA & Seed Escrow"| Challenge
+    Challenge -->|"CPI Transfer (SOL/Tokens)"| Vault
+
+    Creator -->|"2. submit_entry(content_hash, metadata_uri)"| Engine
+    Engine --> SignerCheck
+    SignerCheck --> EpochGuard
+    EpochGuard --> BondCheck
+    BondCheck -->|"Create Submission & Lock Anti-Spam Bond"| Submission
+    Submission -->|"Hold Bond Funds"| Vault
+
+    Curator -->|"3. cast_vote(score, slash_recommendation)"| Engine
+    Engine --> DoubleVoteGuard
+    DoubleVoteGuard -->|"Record Score & Stake Weight"| VoteRecord
+    VoteRecord -->|"Update Aggregate Score & Quorum"| Submission
+
+    Keeper -->|"4. finalize_and_distribute()"| Engine
+    Engine --> MathGuard
+    MathGuard -->|"Audit Quorum & Compute Rank Matrix"| Challenge
+    Challenge -->|"Distribute Prize Pool + Return Clean Bonds"| Creator
+    Challenge -->|"Slash Bad-Faith Spammers -> Sweep to Pool"| Vault
+    Challenge -->|"Pay Settlement Incentive Tip"| Keeper

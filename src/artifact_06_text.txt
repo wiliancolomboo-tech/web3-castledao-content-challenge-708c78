@@ -1,0 +1,9 @@
+castle_challenge
+    ✔ 1. Initializes CastleDAO Challenge with prize pool vault & bond escrow (420ms)
+    ✔ 2. Contestant registers genuine submission and locks anti-spam bond (215ms)
+    ✔ 3. Malicious user registers spam submission and locks bond (198ms)
+    ✔ 4. Evaluator reviews and scores submissions (Approves Winner, Rejects Spam) (310ms)
+    ✔ 5. Winner claims reward + bond refund after challenge end slot arrives (840ms)
+    ✔ 6. Slashes spam contestant's bond into CastleDAO Treasury (230ms)
+
+  6 passing (2.45s)

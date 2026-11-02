@@ -1,0 +1,19 @@
+castledao-protocol/
+├── Anchor.toml
+├── Cargo.toml
+├── programs/
+│   └── castledao/
+│       ├── Cargo.toml
+│       └── src/
+│           ├── errors.rs
+│           ├── instructions/
+│           │   ├── claim_bounty.rs
+│           │   ├── decay_fortress.rs
+│           │   ├── initialize_fortress.rs
+│           │   ├── mod.rs
+│           │   ├── stake_warrior.rs
+│           │   └── verify_challenge.rs
+│           ├── state.rs
+│           └── lib.rs
+└── tests/
+    └── castledao.ts

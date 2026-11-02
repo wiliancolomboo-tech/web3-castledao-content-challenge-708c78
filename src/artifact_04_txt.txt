@@ -1,0 +1,18 @@
+┌──────────────────────────────┬───────────────────────────────────────────┬──────────────────────────────────────────┐
+│ Threat Vector                │ Vulnerability Scenario                    │ Mitigation Architecture                  │
+├──────────────────────────────┼───────────────────────────────────────────┼──────────────────────────────────────────┤
+│ 1. Sybil Submission Flood    │ Spammers register thousands of junk       │ Fixed minimum bond (`MIN_SUBMISSION_BOND │
+│                              │ entries to dilute voting focus.           │ = 0.01 SOL`) required upon entry.        │
+├──────────────────────────────┼───────────────────────────────────────────┼──────────────────────────────────────────┤
+│ 2. Front-Running Curation    │ Curator votes twice or rewrites rating    │ Deterministic PDA derived from           │
+│    Double-Spend              │ after observing rival votes.              │ seeds=[b'vote', submission, curator].    │
+├──────────────────────────────┼───────────────────────────────────────────┼──────────────────────────────────────────┤
+│ 3. Vault Drain Via Drain Bug │ Malicious caller attempts to settle       │ `submission.settled` boolean latch +     │
+│                              │ the same entry repeatedly.                │ `require!(!submission.settled)` check.   │
+├──────────────────────────────┼───────────────────────────────────────────┼──────────────────────────────────────────┤
+│ 4. Reentrancy & Fake Balance │ Malicious program redirects CPI during    │ Direct lamport subtraction before credit │
+│                              │ bond refund or payout.                    │ + no external instruction execution.     │
+├──────────────────────────────┼───────────────────────────────────────────┼──────────────────────────────────────────┤
+│ 5. Truncation Roundoff Dust  │ Precision loss in integer division leaves │ Fixed-point `PRECISION_SCALE` (1e9) math │
+│                              │ unclaimable trapped lamports in PDA.      │ with fallback remainder sweeping.        │
+└──────────────────────────────┴───────────────────────────────────────────┴──────────────────────────────────────────┘

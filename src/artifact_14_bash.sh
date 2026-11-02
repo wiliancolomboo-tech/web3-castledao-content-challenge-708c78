@@ -1,0 +1,1 @@
+solana address -k target/deploy/castledao_engine-keypair.json

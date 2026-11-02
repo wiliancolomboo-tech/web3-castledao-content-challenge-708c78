@@ -1,606 +1,555 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
-declare_id!("CasTLeDaoEng1ne1111111111111111111111111111");
+declare_id!("Cast1eDaoDynamicContentEngine11111111111");
 
-pub const PRECISION_FACTOR: u128 = 1_000_000_000;
-pub const SECONDS_PER_DAY: u64 = 86_400;
+pub const MAX_REALM_NAME_LEN: usize = 32;
+pub const CONTENT_HASH_LEN: usize = 32;
 
 #[program]
-pub mod castle_dao_engine {
+pub mod castle_dao {
     use super::*;
 
-    /// Initialize a new CastleDAO Realm Stronghold with defensive attributes
+    /// Initializes a new Realm governance domain.
     pub fn initialize_realm(
         ctx: Context<InitializeRealm>,
-        defense_rating: u32,
-        base_reward_rate: u64,
-        curation_threshold: u64,
-        timelock_duration: i64,
+        realm_name: String,
+        protocol_fee_bps: u16,
     ) -> Result<()> {
-        require!(defense_rating <= 10_000, CastleError::DefenseRatingExceeded);
+        require!(
+            realm_name.len() <= MAX_REALM_NAME_LEN,
+            CastleDaoError::NameTooLong
+        );
+        require!(
+            protocol_fee_bps <= 1000, // Max 10%
+            CastleDaoError::InvalidFeeConfiguration
+        );
 
         let realm = &mut ctx.accounts.realm;
         realm.authority = ctx.accounts.authority.key();
-        realm.mint = ctx.accounts.token_mint.key();
-        realm.vault = ctx.accounts.realm_vault.key();
-        realm.defense_rating = defense_rating;
-        realm.base_reward_rate = base_reward_rate;
-        realm.curation_threshold = curation_threshold;
-        realm.timelock_duration = timelock_duration;
-        realm.total_staked = 0;
-        realm.bounty_count = 0;
-        realm.vault_authority_bump = ctx.bumps.vault_authority;
+        realm.mint = ctx.accounts.mint.key();
+        realm.realm_name = realm_name;
+        realm.castle_count = 0;
+        realm.protocol_fee_bps = protocol_fee_bps;
         realm.bump = ctx.bumps.realm;
 
-        msg!("CastleDAO: Realm initialized. Defense Rating: {}", defense_rating);
+        emit!(RealmCreatedEvent {
+            realm: realm.key(),
+            authority: realm.authority,
+            mint: realm.mint,
+        });
+
         Ok(())
     }
 
-    /// Stake recruits/knights into Castle Citadel to defend and accrue yield
-    pub fn stake_recruit(ctx: Context<StakeRecruit>, amount: u64) -> Result<()> {
-        require!(amount > 0, CastleError::ZeroStakeAmount);
+    /// Initializes a specific Castle territory under a Realm.
+    pub fn create_castle(
+        ctx: Context<CreateCastle>,
+        castle_id: u64,
+        defense_capacity: u64,
+    ) -> Result<()> {
+        let realm = &mut ctx.accounts.realm;
+        let castle = &mut ctx.accounts.castle;
 
-        let recruit_stake = &mut ctx.accounts.recruit_stake;
-        let clock = Clock::get()?;
+        castle.realm = realm.key();
+        castle.lord = ctx.accounts.lord.key();
+        castle.castle_id = castle_id;
+        castle.defense_power = 0;
+        castle.defense_capacity = defense_capacity;
+        castle.active_challenges = 0;
+        castle.vault = ctx.accounts.castle_vault.key();
+        castle.bump = ctx.bumps.castle;
 
-        // If active stake exists, credit accrued rewards to yield backlog
-        if recruit_stake.staked_amount > 0 {
-            let accrued = calculate_accrued_yield(
-                recruit_stake.staked_amount,
-                ctx.accounts.realm.defense_rating,
-                ctx.accounts.realm.base_reward_rate,
-                recruit_stake.last_checkpoint_timestamp,
-                clock.unix_timestamp,
-            )?;
-            recruit_stake.unclaimed_rewards = recruit_stake
-                .unclaimed_rewards
-                .checked_add(accrued)
-                .ok_or(CastleError::ArithmeticOverflow)?;
-        }
+        realm.castle_count = realm
+            .castle_count
+            .checked_add(1)
+            .ok_or(CastleDaoError::ArithmeticOverflow)?;
 
-        // Transfer SPL tokens from user ATA to Realm Vault
+        emit!(CastleCreatedEvent {
+            castle: castle.key(),
+            lord: castle.lord,
+            castle_id,
+        });
+
+        Ok(())
+    }
+
+    /// Staking mechanism: Increases defense power by locking governance/realm tokens.
+    pub fn stake_defense(ctx: Context<StakeDefense>, amount: u64) -> Result<()> {
+        require!(amount > 0, CastleDaoError::ZeroTransferAmount);
+
+        let castle = &mut ctx.accounts.castle;
+        let new_power = castle
+            .defense_power
+            .checked_add(amount)
+            .ok_or(CastleDaoError::ArithmeticOverflow)?;
+
+        require!(
+            new_power <= castle.defense_capacity,
+            CastleDaoError::DefenseCapacityExceeded
+        );
+
+        // Transfer tokens to the castle PDA vault
         let cpi_accounts = Transfer {
-            from: ctx.accounts.user_token_account.to_account_info(),
-            to: ctx.accounts.realm_vault.to_account_info(),
-            authority: ctx.accounts.user.to_account_info(),
+            from: ctx.accounts.lord_token_account.to_account_info(),
+            to: ctx.accounts.castle_vault.to_account_info(),
+            authority: ctx.accounts.lord.to_account_info(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
         token::transfer(cpi_ctx, amount)?;
 
-        // Update stake state
-        recruit_stake.owner = ctx.accounts.user.key();
-        recruit_stake.realm = ctx.accounts.realm.key();
-        recruit_stake.staked_amount = recruit_stake
-            .staked_amount
-            .checked_add(amount)
-            .ok_or(CastleError::ArithmeticOverflow)?;
-        recruit_stake.last_checkpoint_timestamp = clock.unix_timestamp;
-        recruit_stake.bump = ctx.bumps.recruit_stake;
+        castle.defense_power = new_power;
 
-        let realm = &mut ctx.accounts.realm;
-        realm.total_staked = realm
-            .total_staked
-            .checked_add(amount)
-            .ok_or(CastleError::ArithmeticOverflow)?;
+        emit!(DefenseStakedEvent {
+            castle: castle.key(),
+            amount,
+            new_defense_power: new_power,
+        });
 
-        msg!("CastleDAO: Successfully staked {} recruits", amount);
         Ok(())
     }
 
-    /// Claim accumulated strategic quest rewards
-    pub fn claim_quest_yield(ctx: Context<ClaimQuestYield>) -> Result<()> {
-        let recruit_stake = &mut ctx.accounts.recruit_stake;
-        let clock = Clock::get()?;
+    /// Launches a content challenge with an escrowed reward purse.
+    pub fn launch_challenge(
+        ctx: Context<LaunchChallenge>,
+        challenge_id: u64,
+        reward_amount: u64,
+        duration_slots: u64,
+        target_score_threshold: u32,
+    ) -> Result<()> {
+        require!(reward_amount > 0, CastleDaoError::ZeroTransferAmount);
+        require!(duration_slots > 0, CastleDaoError::InvalidDuration);
 
-        let ongoing_yield = calculate_accrued_yield(
-            recruit_stake.staked_amount,
-            ctx.accounts.realm.defense_rating,
-            ctx.accounts.realm.base_reward_rate,
-            recruit_stake.last_checkpoint_timestamp,
-            clock.unix_timestamp,
-        )?;
+        let castle = &mut ctx.accounts.castle;
+        let challenge = &mut ctx.accounts.challenge;
+        let current_slot = Clock::get()?.slot;
 
-        let total_payable = recruit_stake
-            .unclaimed_rewards
-            .checked_add(ongoing_yield)
-            .ok_or(CastleError::ArithmeticOverflow)?;
+        challenge.castle = castle.key();
+        challenge.challenge_id = challenge_id;
+        challenge.bounty_amount = reward_amount;
+        challenge.target_score_threshold = target_score_threshold;
+        challenge.expiry_slot = current_slot
+            .checked_add(duration_slots)
+            .ok_or(CastleDaoError::ArithmeticOverflow)?;
+        challenge.settled = false;
+        challenge.winner = Pubkey::default();
+        challenge.bump = ctx.bumps.challenge;
 
-        require!(total_payable > 0, CastleError::NoYieldToClaim);
+        castle.active_challenges = castle
+            .active_challenges
+            .checked_add(1)
+            .ok_or(CastleDaoError::ArithmeticOverflow)?;
 
-        recruit_stake.unclaimed_rewards = 0;
-        recruit_stake.last_checkpoint_timestamp = clock.unix_timestamp;
+        // Escrow funds from creator to Castle Vault
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.creator_token_account.to_account_info(),
+            to: ctx.accounts.castle_vault.to_account_info(),
+            authority: ctx.accounts.creator.to_account_info(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts);
+        token::transfer(cpi_ctx, reward_amount)?;
 
-        // Sign transfer from Vault Authority PDA
-        let realm_key = ctx.accounts.realm.key();
-        let seeds = &[
-            b"vault_authority".as_ref(),
+        emit!(ChallengeLaunchedEvent {
+            castle: castle.key(),
+            challenge_id,
+            bounty_amount: reward_amount,
+            expiry_slot: challenge.expiry_slot,
+        });
+
+        Ok(())
+    }
+
+    /// Submits a cryptographic hash of the content (IPFS CID digest) for evaluation.
+    pub fn submit_content_entry(
+        ctx: Context<SubmitContentEntry>,
+        content_hash: [u8; CONTENT_HASH_LEN],
+    ) -> Result<()> {
+        let challenge = &ctx.accounts.challenge;
+        let current_slot = Clock::get()?.slot;
+
+        require!(
+            current_slot <= challenge.expiry_slot,
+            CastleDaoError::ChallengeExpired
+        );
+        require!(!challenge.settled, CastleDaoError::ChallengeAlreadySettled);
+
+        let entry = &mut ctx.accounts.entry;
+        entry.challenge = challenge.key();
+        entry.contender = ctx.accounts.contender.key();
+        entry.content_hash = content_hash;
+        entry.score = 0;
+        entry.evaluated = false;
+        entry.bump = ctx.bumps.entry;
+
+        emit!(ContentSubmittedEvent {
+            challenge: challenge.key(),
+            contender: entry.contender,
+            content_hash,
+        });
+
+        Ok(())
+    }
+
+    /// Settles the challenge, verifies scoring, and dispatches the token reward via PDA CPI.
+    pub fn settle_and_distribute(
+        ctx: Context<SettleAndDistribute>,
+        verified_score: u32,
+    ) -> Result<()> {
+        let challenge = &mut ctx.accounts.challenge;
+        let entry = &mut ctx.accounts.entry;
+        let castle = &mut ctx.accounts.castle;
+
+        require!(!challenge.settled, CastleDaoError::ChallengeAlreadySettled);
+        require!(
+            verified_score >= challenge.target_score_threshold,
+            CastleDaoError::ScoreBelowThreshold
+        );
+
+        entry.score = verified_score;
+        entry.evaluated = true;
+
+        challenge.settled = true;
+        challenge.winner = entry.contender;
+
+        castle.active_challenges = castle
+            .active_challenges
+            .checked_sub(1)
+            .ok_or(CastleDaoError::ArithmeticOverflow)?;
+
+        // Execute PDA transfer from Castle Vault to Contender
+        let realm_key = castle.realm;
+        let castle_id_bytes = castle.castle_id.to_le_bytes();
+        let castle_bump = &[castle.bump];
+        let seeds: &[&[&[u8]]] = &[&[
+            b"castle",
             realm_key.as_ref(),
-            &[ctx.accounts.realm.vault_authority_bump],
-        ];
-        let signer_seeds = &[&seeds[..]];
+            castle_id_bytes.as_ref(),
+            castle_bump,
+        ]];
 
         let cpi_accounts = Transfer {
-            from: ctx.accounts.realm_vault.to_account_info(),
-            to: ctx.accounts.user_token_account.to_account_info(),
-            authority: ctx.accounts.vault_authority.to_account_info(),
+            from: ctx.accounts.castle_vault.to_account_info(),
+            to: ctx.accounts.contender_token_account.to_account_info(),
+            authority: castle.to_account_info(),
         };
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             cpi_accounts,
-            signer_seeds,
-        );
-        token::transfer(cpi_ctx, total_payable)?;
-
-        msg!("CastleDAO: Claimed {} yield tokens", total_payable);
-        Ok(())
-    }
-
-    /// Submit content, tactical blueprints, or lore for decentralized curation
-    pub fn submit_content(
-        ctx: Context<SubmitContent>,
-        content_hash: [u8; 32],
-        requested_bounty: u64,
-        metadata_uri: String,
-    ) -> Result<()> {
-        require!(metadata_uri.len() <= 128, CastleError::UriTooLong);
-        require!(requested_bounty > 0, CastleError::InvalidBountyAmount);
-
-        let realm = &mut ctx.accounts.realm;
-        let bounty = &mut ctx.accounts.content_bounty;
-        let clock = Clock::get()?;
-
-        bounty.id = realm.bounty_count;
-        bounty.realm = realm.key();
-        bounty.creator = ctx.accounts.creator.key();
-        bounty.content_hash = content_hash;
-        bounty.requested_bounty = requested_bounty;
-        bounty.metadata_uri = metadata_uri;
-        bounty.approval_votes = 0;
-        bounty.rejection_votes = 0;
-        bounty.submission_timestamp = clock.unix_timestamp;
-        bounty.state = ContentState::PendingReview;
-        bounty.bump = ctx.bumps.content_bounty;
-
-        realm.bounty_count = realm
-            .bounty_count
-            .checked_add(1)
-            .ok_or(CastleError::ArithmeticOverflow)?;
-
-        msg!("CastleDAO: Bounty #{} submitted for curation", bounty.id);
-        Ok(())
-    }
-
-    /// Stakers vote to approve or reject submitted content
-    pub fn curate_content(ctx: Context<CurateContent>, approve: bool) -> Result<()> {
-        let stake = &ctx.accounts.recruit_stake;
-        let bounty = &mut ctx.accounts.content_bounty;
-
-        require!(stake.staked_amount > 0, CastleError::InsufficientVotingWeight);
-        require!(
-            bounty.state == ContentState::PendingReview,
-            CastleError::BountyNotUnderReview
+            seeds,
         );
 
-        // Calculate quadratic voting weight: sqrt(staked_amount)
-        let weight = integer_sqrt(stake.staked_amount);
+        token::transfer(cpi_ctx, challenge.bounty_amount)?;
 
-        if approve {
-            bounty.approval_votes = bounty
-                .approval_votes
-                .checked_add(weight)
-                .ok_or(CastleError::ArithmeticOverflow)?;
-        } else {
-            bounty.rejection_votes = bounty
-                .rejection_votes
-                .checked_add(weight)
-                .ok_or(CastleError::ArithmeticOverflow)?;
-        }
-
-        msg!(
-            "CastleDAO: Curator voted. Weight: {}, Approved: {}",
-            weight,
-            approve
-        );
-        Ok(())
-    }
-
-    /// Settle content bounty post-timelock if quorum is achieved
-    pub fn finalize_content_bounty(ctx: Context<FinalizeContentBounty>) -> Result<()> {
-        let bounty = &mut ctx.accounts.content_bounty;
-        let realm = &ctx.accounts.realm;
-        let clock = Clock::get()?;
-
-        require!(
-            bounty.state == ContentState::PendingReview,
-            CastleError::BountyNotUnderReview
-        );
-
-        let elapsed = clock
-            .unix_timestamp
-            .checked_sub(bounty.submission_timestamp)
-            .ok_or(CastleError::ArithmeticUnderflow)?;
-
-        require!(
-            elapsed >= realm.timelock_duration,
-            CastleError::TimelockNotElapsed
-        );
-
-        let net_positive_votes = bounty
-            .approval_votes
-            .checked_sub(bounty.rejection_votes)
-            .unwrap_or(0);
-
-        if net_positive_votes >= realm.curation_threshold {
-            bounty.state = ContentState::Accepted;
-
-            // Transfer reward from realm vault to content creator
-            let realm_key = realm.key();
-            let seeds = &[
-                b"vault_authority".as_ref(),
-                realm_key.as_ref(),
-                &[realm.vault_authority_bump],
-            ];
-            let signer_seeds = &[&seeds[..]];
-
-            let cpi_accounts = Transfer {
-                from: ctx.accounts.realm_vault.to_account_info(),
-                to: ctx.accounts.creator_token_account.to_account_info(),
-                authority: ctx.accounts.vault_authority.to_account_info(),
-            };
-            let cpi_ctx = CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                cpi_accounts,
-                signer_seeds,
-            );
-            token::transfer(cpi_ctx, bounty.requested_bounty)?;
-            msg!("CastleDAO: Content bounty #{} accepted and paid", bounty.id);
-        } else {
-            bounty.state = ContentState::Rejected;
-            msg!("CastleDAO: Content bounty #{} rejected by quorum", bounty.id);
-        }
+        emit!(ChallengeSettledEvent {
+            challenge: challenge.key(),
+            winner: entry.contender,
+            payout: challenge.bounty_amount,
+            score: verified_score,
+        });
 
         Ok(())
     }
 }
 
-// ----------------------------------------------------------------------------
-// Helper Math Functions
-// ----------------------------------------------------------------------------
-
-fn calculate_accrued_yield(
-    staked_amount: u64,
-    defense_rating: u32,
-    base_reward_rate: u64,
-    last_timestamp: i64,
-    current_timestamp: i64,
-) -> Result<u64> {
-    if current_timestamp <= last_timestamp || staked_amount == 0 {
-        return Ok(0);
-    }
-
-    let elapsed = (current_timestamp - last_timestamp) as u128;
-    let staked = staked_amount as u128;
-    let rate = base_reward_rate as u128;
-
-    // Multiplier = 1000 + defense_rating (1000 = 1.0x baseline, 10_000 max = 11.0x multiplier)
-    let defense_multiplier = 1000u128
-        .checked_add(defense_rating as u128)
-        .ok_or(CastleError::ArithmeticOverflow)?;
-
-    // Yield = (staked * rate * elapsed * defense_multiplier) / (SECONDS_PER_DAY * 1000 * PRECISION_FACTOR)
-    let numerator = staked
-        .checked_mul(rate)
-        .and_then(|v| v.checked_mul(elapsed))
-        .and_then(|v| v.checked_mul(defense_multiplier))
-        .ok_or(CastleError::ArithmeticOverflow)?;
-
-    let denominator = (SECONDS_PER_DAY as u128)
-        .checked_mul(1_000)
-        .and_then(|v| v.checked_mul(PRECISION_FACTOR))
-        .ok_or(CastleError::ArithmeticOverflow)?;
-
-    let yield_amount = numerator
-        .checked_div(denominator)
-        .ok_or(CastleError::ArithmeticUnderflow)?;
-
-    Ok(yield_amount as u64)
-}
-
-fn integer_sqrt(n: u64) -> u64 {
-    let mut x0 = n / 2;
-    if x0 != 0 {
-        let mut x1 = (x0 + n / x0) / 2;
-        while x1 < x0 {
-            x0 = x1;
-            x1 = (x0 + n / x0) / 2;
-        }
-        x0
-    } else {
-        n
-    }
-}
-
-// ----------------------------------------------------------------------------
-// Context Accounts Validation
-// ----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// ACCOUNT VALIDATION STRUCTS
+// -----------------------------------------------------------------------------
 
 #[derive(Accounts)]
+#[instruction(realm_name: String)]
 pub struct InitializeRealm<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + Realm::INIT_SPACE,
-        seeds = [b"castle_realm", authority.key().as_ref()],
+        space = 8 + RealmConfig::LEN,
+        seeds = [b"realm", realm_name.as_bytes()],
         bump
     )]
-    pub realm: Account<'info, Realm>,
-
-    pub token_mint: Account<'info, Mint>,
-
-    #[account(
-        init,
-        payer = authority,
-        token::mint = token_mint,
-        token::authority = vault_authority,
-    )]
-    pub realm_vault: Account<'info, TokenAccount>,
-
-    /// CHECK: PDA used as signing authority for realm_vault
-    #[account(
-        seeds = [b"vault_authority", realm.key().as_ref()],
-        bump
-    )]
-    pub vault_authority: UncheckedAccount<'info>,
-
+    pub realm: Account<'info, RealmConfig>,
+    pub mint: Account<'info, Mint>,
     #[account(mut)]
     pub authority: Signer<'info>,
-
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(castle_id: u64)]
+pub struct CreateCastle<'info> {
+    #[account(
+        mut,
+        seeds = [b"realm", realm.realm_name.as_bytes()],
+        bump = realm.bump,
+    )]
+    pub realm: Account<'info, RealmConfig>,
+    #[account(
+        init,
+        payer = lord,
+        space = 8 + CastleAccount::LEN,
+        seeds = [b"castle", realm.key().as_ref(), &castle_id.to_le_bytes()],
+        bump
+    )]
+    pub castle: Account<'info, CastleAccount>,
+    #[account(
+        init,
+        payer = lord,
+        seeds = [b"vault", castle.key().as_ref()],
+        bump,
+        token::mint = mint,
+        token::authority = castle,
+    )]
+    pub castle_vault: Account<'info, TokenAccount>,
+    pub mint: Account<'info, Mint>,
+    #[account(mut)]
+    pub lord: Signer<'info>,
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
-pub struct StakeRecruit<'info> {
-    #[account(mut)]
-    pub realm: Account<'info, Realm>,
-
-    #[account(
-        init_if_needed,
-        payer = user,
-        space = 8 + RecruitStake::INIT_SPACE,
-        seeds = [b"recruit_stake", realm.key().as_ref(), user.key().as_ref()],
-        bump
-    )]
-    pub recruit_stake: Account<'info, RecruitStake>,
-
+pub struct StakeDefense<'info> {
     #[account(
         mut,
-        constraint = realm_vault.key() == realm.vault @ CastleError::InvalidVaultAccount
+        seeds = [b"castle", castle.realm.as_ref(), &castle.castle_id.to_le_bytes()],
+        bump = castle.bump,
+        has_one = lord,
+        has_one = vault @ CastleDaoError::InvalidVaultAccount
     )]
-    pub realm_vault: Account<'info, TokenAccount>,
-
-    #[account(
-        mut,
-        constraint = user_token_account.owner == user.key() @ CastleError::InvalidTokenOwner,
-        constraint = user_token_account.mint == realm.mint @ CastleError::InvalidMint
-    )]
-    pub user_token_account: Account<'info, TokenAccount>,
-
+    pub castle: Account<'info, CastleAccount>,
     #[account(mut)]
-    pub user: Signer<'info>,
-
-    pub system_program: Program<'info, System>,
+    pub castle_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub lord_token_account: Account<'info, TokenAccount>,
+    pub lord: Signer<'info>,
     pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
-pub struct ClaimQuestYield<'info> {
-    #[account(mut)]
-    pub realm: Account<'info, Realm>,
-
+#[instruction(challenge_id: u64)]
+pub struct LaunchChallenge<'info> {
     #[account(
         mut,
-        seeds = [b"recruit_stake", realm.key().as_ref(), user.key().as_ref()],
-        bump = recruit_stake.bump,
-        has_one = owner @ CastleError::UnauthorizedStakeOwner,
-        has_one = realm @ CastleError::InvalidRealmContext
+        seeds = [b"castle", castle.realm.as_ref(), &castle.castle_id.to_le_bytes()],
+        bump = castle.bump,
+        has_one = vault @ CastleDaoError::InvalidVaultAccount
     )]
-    pub recruit_stake: Account<'info, RecruitStake>,
-
-    #[account(
-        mut,
-        constraint = realm_vault.key() == realm.vault @ CastleError::InvalidVaultAccount
-    )]
-    pub realm_vault: Account<'info, TokenAccount>,
-
-    /// CHECK: PDA vault authority
-    #[account(
-        seeds = [b"vault_authority", realm.key().as_ref()],
-        bump = realm.vault_authority_bump
-    )]
-    pub vault_authority: UncheckedAccount<'info>,
-
-    #[account(
-        mut,
-        constraint = user_token_account.owner == user.key() @ CastleError::InvalidTokenOwner,
-        constraint = user_token_account.mint == realm.mint @ CastleError::InvalidMint
-    )]
-    pub user_token_account: Account<'info, TokenAccount>,
-
-    pub user: Signer<'info>,
-    pub token_program: Program<'info, Token>,
-}
-
-#[derive(Accounts)]
-pub struct SubmitContent<'info> {
-    #[account(mut)]
-    pub realm: Account<'info, Realm>,
-
+    pub castle: Account<'info, CastleAccount>,
     #[account(
         init,
         payer = creator,
-        space = 8 + ContentBounty::INIT_SPACE,
-        seeds = [b"content_bounty", realm.key().as_ref(), realm.bounty_count.to_le_bytes().as_ref()],
+        space = 8 + ChallengeAccount::LEN,
+        seeds = [b"challenge", castle.key().as_ref(), &challenge_id.to_le_bytes()],
         bump
     )]
-    pub content_bounty: Account<'info, ContentBounty>,
-
+    pub challenge: Account<'info, ChallengeAccount>,
+    #[account(mut)]
+    pub castle_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub creator_token_account: Account<'info, TokenAccount>,
     #[account(mut)]
     pub creator: Signer<'info>,
-
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-pub struct CurateContent<'info> {
-    pub realm: Account<'info, Realm>,
-
+pub struct SubmitContentEntry<'info> {
     #[account(
-        mut,
-        seeds = [b"content_bounty", realm.key().as_ref(), content_bounty.id.to_le_bytes().as_ref()],
-        bump = content_bounty.bump,
-        has_one = realm @ CastleError::InvalidRealmContext
+        seeds = [b"challenge", challenge.castle.as_ref(), &challenge.challenge_id.to_le_bytes()],
+        bump = challenge.bump
     )]
-    pub content_bounty: Account<'info, ContentBounty>,
-
+    pub challenge: Account<'info, ChallengeAccount>,
     #[account(
-        seeds = [b"recruit_stake", realm.key().as_ref(), curator.key().as_ref()],
-        bump = recruit_stake.bump,
-        has_one = realm @ CastleError::InvalidRealmContext
+        init,
+        payer = contender,
+        space = 8 + EntryAccount::LEN,
+        seeds = [b"entry", challenge.key().as_ref(), contender.key().as_ref()],
+        bump
     )]
-    pub recruit_stake: Account<'info, RecruitStake>,
-
-    pub curator: Signer<'info>,
+    pub entry: Account<'info, EntryAccount>,
+    #[account(mut)]
+    pub contender: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-pub struct FinalizeContentBounty<'info> {
+pub struct SettleAndDistribute<'info> {
+    #[account(
+        mut,
+        seeds = [b"castle", castle.realm.as_ref(), &castle.castle_id.to_le_bytes()],
+        bump = castle.bump,
+        has_one = vault @ CastleDaoError::InvalidVaultAccount
+    )]
+    pub castle: Account<'info, CastleAccount>,
+    #[account(
+        mut,
+        seeds = [b"challenge", castle.key().as_ref(), &challenge.challenge_id.to_le_bytes()],
+        bump = challenge.bump,
+        has_one = castle @ CastleDaoError::InvalidCastleAccount
+    )]
+    pub challenge: Account<'info, ChallengeAccount>,
+    #[account(
+        mut,
+        seeds = [b"entry", challenge.key().as_ref(), entry.contender.as_ref()],
+        bump = entry.bump,
+        has_one = challenge @ CastleDaoError::InvalidChallengeAccount
+    )]
+    pub entry: Account<'info, EntryAccount>,
     #[account(mut)]
-    pub realm: Account<'info, Realm>,
-
+    pub castle_vault: Account<'info, TokenAccount>,
     #[account(
         mut,
-        seeds = [b"content_bounty", realm.key().as_ref(), content_bounty.id.to_le_bytes().as_ref()],
-        bump = content_bounty.bump,
-        has_one = realm @ CastleError::InvalidRealmContext
+        constraint = contender_token_account.owner == entry.contender @ CastleDaoError::InvalidRecipient
     )]
-    pub content_bounty: Account<'info, ContentBounty>,
-
+    pub contender_token_account: Account<'info, TokenAccount>,
+    /// Lord or assigned oracle validator must sign settlement.
     #[account(
-        mut,
-        constraint = realm_vault.key() == realm.vault @ CastleError::InvalidVaultAccount
+        constraint = verifier.key() == castle.lord @ CastleDaoError::UnauthorizedVerifier
     )]
-    pub realm_vault: Account<'info, TokenAccount>,
-
-    /// CHECK: PDA vault authority
-    #[account(
-        seeds = [b"vault_authority", realm.key().as_ref()],
-        bump = realm.vault_authority_bump
-    )]
-    pub vault_authority: UncheckedAccount<'info>,
-
-    #[account(
-        mut,
-        constraint = creator_token_account.owner == content_bounty.creator @ CastleError::InvalidTokenOwner,
-        constraint = creator_token_account.mint == realm.mint @ CastleError::InvalidMint
-    )]
-    pub creator_token_account: Account<'info, TokenAccount>,
-
-    pub caller: Signer<'info>,
+    pub verifier: Signer<'info>,
     pub token_program: Program<'info, Token>,
 }
 
-// ----------------------------------------------------------------------------
-// State Accounts
-// ----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// STATE STRUCTURES
+// -----------------------------------------------------------------------------
 
 #[account]
-#[derive(InitSpace)]
-pub struct Realm {
+pub struct RealmConfig {
+    pub authority: Pubkey,       // 32
+    pub mint: Pubkey,            // 32
+    pub realm_name: String,      // 4 + 32
+    pub castle_count: u64,       // 8
+    pub protocol_fee_bps: u16,   // 2
+    pub bump: u8,                // 1
+}
+
+impl RealmConfig {
+    pub const LEN: usize = 32 + 32 + (4 + MAX_REALM_NAME_LEN) + 8 + 2 + 1;
+}
+
+#[account]
+pub struct CastleAccount {
+    pub realm: Pubkey,           // 32
+    pub lord: Pubkey,            // 32
+    pub vault: Pubkey,           // 32
+    pub castle_id: u64,          // 8
+    pub defense_power: u64,      // 8
+    pub defense_capacity: u64,   // 8
+    pub active_challenges: u32,  // 4
+    pub bump: u8,                // 1
+}
+
+impl CastleAccount {
+    pub const LEN: usize = 32 + 32 + 32 + 8 + 8 + 8 + 4 + 1;
+}
+
+#[account]
+pub struct ChallengeAccount {
+    pub castle: Pubkey,          // 32
+    pub winner: Pubkey,          // 32
+    pub challenge_id: u64,       // 8
+    pub bounty_amount: u64,      // 8
+    pub expiry_slot: u64,        // 8
+    pub target_score_threshold: u32, // 4
+    pub settled: bool,           // 1
+    pub bump: u8,                // 1
+}
+
+impl ChallengeAccount {
+    pub const LEN: usize = 32 + 32 + 8 + 8 + 8 + 4 + 1 + 1;
+}
+
+#[account]
+pub struct EntryAccount {
+    pub challenge: Pubkey,       // 32
+    pub contender: Pubkey,       // 32
+    pub content_hash: [u8; 32],  // 32
+    pub score: u32,              // 4
+    pub evaluated: bool,         // 1
+    pub bump: u8,                // 1
+}
+
+impl EntryAccount {
+    pub const LEN: usize = 32 + 32 + 32 + 4 + 1 + 1;
+}
+
+// -----------------------------------------------------------------------------
+// EVENTS & ERRORS
+// -----------------------------------------------------------------------------
+
+#[event]
+pub struct RealmCreatedEvent {
+    pub realm: Pubkey,
     pub authority: Pubkey,
     pub mint: Pubkey,
-    pub vault: Pubkey,
-    pub defense_rating: u32,
-    pub base_reward_rate: u64,
-    pub curation_threshold: u64,
-    pub timelock_duration: i64,
-    pub total_staked: u64,
-    pub bounty_count: u64,
-    pub vault_authority_bump: u8,
-    pub bump: u8,
 }
 
-#[account]
-#[derive(InitSpace)]
-pub struct RecruitStake {
-    pub owner: Pubkey,
-    pub realm: Pubkey,
-    pub staked_amount: u64,
-    pub last_checkpoint_timestamp: i64,
-    pub unclaimed_rewards: u64,
-    pub bump: u8,
+#[event]
+pub struct CastleCreatedEvent {
+    pub castle: Pubkey,
+    pub lord: Pubkey,
+    pub castle_id: u64,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
-pub enum ContentState {
-    PendingReview,
-    Accepted,
-    Rejected,
+#[event]
+pub struct DefenseStakedEvent {
+    pub castle: Pubkey,
+    pub amount: u64,
+    pub new_defense_power: u64,
 }
 
-#[account]
-#[derive(InitSpace)]
-pub struct ContentBounty {
-    pub id: u64,
-    pub realm: Pubkey,
-    pub creator: Pubkey,
+#[event]
+pub struct ChallengeLaunchedEvent {
+    pub castle: Pubkey,
+    pub challenge_id: u64,
+    pub bounty_amount: u64,
+    pub expiry_slot: u64,
+}
+
+#[event]
+pub struct ContentSubmittedEvent {
+    pub challenge: Pubkey,
+    pub contender: Pubkey,
     pub content_hash: [u8; 32],
-    pub requested_bounty: u64,
-    #[max_len(128)]
-    pub metadata_uri: String,
-    pub approval_votes: u64,
-    pub rejection_votes: u64,
-    pub submission_timestamp: i64,
-    pub state: ContentState,
-    pub bump: u8,
 }
 
-// ----------------------------------------------------------------------------
-// Error Codes
-// ----------------------------------------------------------------------------
+#[event]
+pub struct ChallengeSettledEvent {
+    pub challenge: Pubkey,
+    pub winner: Pubkey,
+    pub payout: u64,
+    pub score: u32,
+}
 
 #[error_code]
-pub mod CastleError {
-    #[msg("Defense rating exceeds the 10,000 basis points maximum limit.")]
-    DefenseRatingExceeded,
-    #[msg("Stake amount must be strictly greater than zero.")]
-    ZeroStakeAmount,
-    #[msg("Arithmetic overflow detected.")]
+pub enum CastleDaoError {
+    #[msg("Realm name exceeds allowed 32-byte bound.")]
+    NameTooLong,
+    #[msg("Protocol fee exceeds maximum allowed basis points (1000).")]
+    InvalidFeeConfiguration,
+    #[msg("Arithmetic overflow detected during integer operation.")]
     ArithmeticOverflow,
-    #[msg("Arithmetic underflow detected.")]
-    ArithmeticUnderflow,
-    #[msg("Zero yield available to claim.")]
-    NoYieldToClaim,
-    #[msg("Content metadata URI exceeds maximum permitted length.")]
-    UriTooLong,
-    #[msg("Requested bounty must be greater than zero.")]
-    InvalidBountyAmount,
-    #[msg("Curator has insufficient staked tokens to vote.")]
-    InsufficientVotingWeight,
-    #[msg("Content bounty is not under pending review.")]
-    BountyNotUnderReview,
-    #[msg("Challenge timelock duration has not elapsed yet.")]
-    TimelockNotElapsed,
-    #[msg("Vault token account does not match Realm configuration.")]
+    #[msg("Transfer amount must be strictly greater than zero.")]
+    ZeroTransferAmount,
+    #[msg("Defense capacity would be exceeded by this deposit.")]
+    DefenseCapacityExceeded,
+    #[msg("Invalid duration provided for challenge.")]
+    InvalidDuration,
+    #[msg("Challenge expiry slot has elapsed.")]
+    ChallengeExpired,
+    #[msg("Challenge has already been settled.")]
+    ChallengeAlreadySettled,
+    #[msg("Score achieved is below minimum target threshold.")]
+    ScoreBelowThreshold,
+    #[msg("Castle vault token account does not match expected PDA.")]
     InvalidVaultAccount,
-    #[msg("Token account owner constraint violation.")]
-    InvalidTokenOwner,
-    #[msg("Mint account does not match realm mint.")]
-    InvalidMint,
-    #[msg("Unauthorized access to stake account.")]
-    UnauthorizedStakeOwner,
-    #[msg("Account does not belong to specified Castle Realm.")]
-    InvalidRealmContext,
+    #[msg("Specified castle does not match challenge target.")]
+    InvalidCastleAccount,
+    #[msg("Specified challenge does not match entry target.")]
+    InvalidChallengeAccount,
+    #[msg("Contender token account owner mismatch.")]
+    InvalidRecipient,
+    #[msg("Signer is not authorized to verify challenge scores.")]
+    UnauthorizedVerifier,
 }

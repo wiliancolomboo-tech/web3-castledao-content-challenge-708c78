@@ -1,0 +1,10 @@
+CastleDAO Core Protocol QA Test Suite
+    ✔ 1. Initializes Realm Domain successfully (282ms)
+    ✔ 2. Deploys Castle territory and associated Vault PDA (311ms)
+    ✔ 3. Stakes tokens into Defense Vault (295ms)
+    ✔ 4. Launches Content Challenge with escrowed bounty (302ms)
+    ✔ 5. Submits Content Entry with 32-byte cryptographic digest (279ms)
+    ✔ 6. Settles Challenge and delivers PDA reward payout (325ms)
+    ✔ 7. Fails gracefully when settling below target score threshold (198ms)
+
+  7 passing (2.4s)

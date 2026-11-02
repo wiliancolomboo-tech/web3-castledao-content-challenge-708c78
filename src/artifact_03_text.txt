@@ -1,0 +1,10 @@
+castle-dao/
+├── Anchor.toml
+├── Cargo.toml
+├── programs/
+│   └── castle-dao/
+│       ├── Cargo.toml
+│       └── src/
+│           └── lib.rs
+└── tests/
+    └── castle-dao.ts

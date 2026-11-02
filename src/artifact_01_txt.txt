@@ -1,8 +1,8 @@
-EVM / Arbitrum L2                                Solana High-Throughput Layer
-┌───────────────────────────────┐              ┌──────────────────────────────────────────────┐
-│ CastleDAO Legacy Settlement   │              │ CastleDAO Solana Engine                      │
-│ - 12-15s Block Time Latency   │  Migration   │ - 400ms Slot Finality                        │
-│ - High Gas for Micro-Quests   │ ───────────> │ - Parallel Transaction Processing (Sealevel) │
-│ - Off-Chain Curation Overheads│              │ - Sub-Cent Micro-Bounties & Real-Time Ticks  │
-│ - Static Staking Contracts    │              │ - Deterministic PDA Staking & Content Matrix │
-└───────────────────────────────┘              └──────────────────────────────────────────────┘
++--------------------------------------------------------------------------------------------------+
+|                                    CASTLEDAO ARCHITECTURE                                        |
++------------------------------------+------------------------------------+------------------------+
+| REALM CONQUEST & DEFENSE           | CONTENT CHALLENGE ESCROW           | KEEPER & SETTLEMENT    |
+| - Staked Warrior Escrows           | - Merkle / Digest PDA Validation   | - Ephemeral Compute CU |
+| - Dynamic Health Pool              | - Automated Prize Distribution     | - Slashing on Inaction |
+| - Rent-Exempt Castle Vaults        | - Zero-Dust Token Accounts         | - Anti-Frontrunning    |
++------------------------------------+------------------------------------+------------------------+

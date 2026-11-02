@@ -1,0 +1,10 @@
+┌───────────────────────┐         ┌────────────────────────┐
+   │ Canonical Seed Check  │ ──────> │ Checked Math Invariants│
+   │ Bumps bound in state  │         │ Safe checked_add/mul   │
+   └───────────────────────┘         └────────────────────────┘
+               │                                  │
+               ▼                                  ▼
+   ┌───────────────────────┐         ┌────────────────────────┐
+   │ Mutex Lock Guards     │ ──────> │ Dynamic Rent Recovery  │
+   │ under_siege flag lock │         │ close account pattern  │
+   └───────────────────────┘         └────────────────────────┘

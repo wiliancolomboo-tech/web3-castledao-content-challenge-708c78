@@ -1,0 +1,20 @@
+[package]
+name = "castle_dao"
+version = "0.1.0"
+description = "High-Throughput On-Chain Siege & Staking Engine for CastleDAO"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "castle_dao"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = { version = "0.30.1", features = ["init-if-needed"] }
+anchor-spl = { version = "0.30.1", features = ["token_2022"] }

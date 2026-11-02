@@ -1,0 +1,9 @@
+castle_dao_content protocol tests
+    ✔ 1. Initializes CastleDAO Guild Config (284ms)
+    ✔ 2. Creates a Lore Challenge and deposits escrow bounty (420ms)
+    ✔ 3. Submits Lore Entry with IPFS multihash and bond escrow (310ms)
+    ✔ 4. Casts Staked Vote with Square-Root Dampening (5210ms)
+    ✔ 5. Finalizes Challenge after Voting Window concludes (4180ms)
+    ✔ 6. Winner Claims Bounty & Anti-Spam Bond (345ms)
+
+  6 passing (10.75s)

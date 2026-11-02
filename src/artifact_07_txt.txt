@@ -1,0 +1,19 @@
+[00:00 - 00:20] Hook & Problem Statement
+VISUAL: High-contrast slide showing traditional Web3 bounty problems (opaque selection, slow payouts) transitioning to CastleDAO on Solana.
+AUDIO (Voiceover): "Bounties and creator challenges in Web3 are broken. High-effort creators wait weeks for subjective reviews, while DAOs struggle with spam and manual multisig disbursements. Today, we're introducing the CastleDAO Content Protocol: the first trustless, on-chain bounty and curation engine built on Solana."
+
+[00:20 - 00:50] Architectural Architecture & Challenge Creation
+VISUAL: Terminal executes `anchor test`. Browser showcases Challenge PDA initialization and token escrow.
+AUDIO: "With sub-second finality and negligible fees, CastleDAO admins spin up a bounty escrow in one transaction. In our demonstration, Challenge 101 is initialized with 50 governance tokens locked in a deterministic PDA vault. The submission and curation deadlines are cryptographically enforced directly by the Solana runtime clock."
+
+[00:50 - 01:25] Anti-Spam Submission & Conviction Curation
+VISUAL: Creator commits content hash. Curator casts stake-weighted vote. Explorer verifies `curator_vote` PDA state.
+AUDIO: "Creators don't just paste links—they anchor SHA-256 digests of their Arweave metadata paired with a refundable stake bond. This renders spam economically irrational. Next, community curators stake their governance weight to elevate high-quality lore, memes, and technical work with zero gas friction—consuming under 14,000 compute units."
+
+[01:25 - 01:45] Programmatic Settlement & Payout
+VISUAL: Automated execution of `settle_challenge`. Token accounts update in real-time.
+AUDIO: "Once the deadline passes, any crank or keeper triggers settlement. The protocol validates the winning entry, deducts the 2.5% DAO protocol fee, transfers the reward, and returns the creator's stake bond automatically—all within a single atomic transaction."
+
+[01:45 - 02:00] Closing & Winning Proposition
+VISUAL: GitHub repository, test matrix green ticks (6/6 passing), and final CastleDAO banner.
+AUDIO: "Zero human friction, mathematical fairness, and complete on-chain provenance. The CastleDAO Content Protocol turns community talent into verifiable value. Thank you!"

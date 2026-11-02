@@ -1,0 +1,3 @@
+[cargo-build] Compiling castle-dao v0.1.0 ...
+[cargo-build] Finished release [optimized] target(s) in 8.42s
+Program Id: Cast1eDaoDynamicContentEngine11111111111

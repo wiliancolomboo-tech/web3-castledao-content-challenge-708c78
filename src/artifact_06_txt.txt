@@ -1,2 +1,21 @@
-00:00 ──────────────── 00:25 ─────────────── 00:55 ─────────────── 01:30 ───────────── 02:00
-  Hook & Vision        Citadel Staking      Content Submission    Curate & Pay    Why We Win
++-----------------------------------+------------------------------------------+-------------------------------------------------------------+
+| Vulnerability Vector              | Attack Scenario                          | C-ACE Programmatic Mitigation Defense                       |
++-----------------------------------+------------------------------------------+-------------------------------------------------------------+
+| Reentrancy via CPI                | Attacker crafts malicious token callback | Anchor checks-effects-interactions; challenge state is set  |
+|                                   | during payout phase to drain vault       | to Finalized prior to SPL CPI execution.                    |
++-----------------------------------+------------------------------------------+-------------------------------------------------------------+
+| Creator Self-Attestation (Sybil)  | Creator votes for own content with dust  | Enforces constraint: `submission.creator != curator.key()`. |
+|                                   | balance to artificially inflate rank     | Rejects tx with `SelfAttestationProhibited`.                |
++-----------------------------------+------------------------------------------+-------------------------------------------------------------+
+| Unstaked / Low-Stake Manipulation | Botnet spawns 1,000 empty pubkeys to     | Evaluates `curator_stake_account.amount >=                  |
+|                                   | skew the median rating                   | global_config.min_curator_stake`. Rejects uncollateralized. |
++-----------------------------------+------------------------------------------+-------------------------------------------------------------+
+| PDA Seed Collision / Spoofing     | Malicious vault key injection to hijack  | PDA seeds use strictly anchored pairs `[b"vault",           |
+|                                   | disbursements                            | challenge.key().as_ref()]` validated via Anchor constraints.|
++-----------------------------------+------------------------------------------+-------------------------------------------------------------+
+| Numerical Overflow / Truncation   | Score * Stake product triggers runtime   | Strict usage of `checked_mul` and `checked_add` with        |
+|                                   | overflow or precision loss               | intermediate `u128` widening before storing `total_score`.  |
++-----------------------------------+------------------------------------------+-------------------------------------------------------------+
+| Premature Challenge Finalization  | Host calls finalize early to frontrun    | Verification: `clock.unix_timestamp > review_deadline`.     |
+|                                   | legitimate creator submissions           | Locked by runtime sysvar constraints.                       |
++-----------------------------------+------------------------------------------+-------------------------------------------------------------+

@@ -1,0 +1,9 @@
+CastleDAO Siege Engine Protocol Tests
+    ✔ 1. Initializes the Castle State & Escrow Vault (184ms)
+    ✔ 2. Fortifies the Castle Walls with Staked Reserves (152ms)
+    ✔ 3. Initiates an Active Siege against the Castle (190ms)
+    ✔ 4. Fails to resolve tick prematurely (Enforces minimum combat duration) (45ms)
+    ✔ 5. Resolves Siege After Slot Advancement (Breach Confirmed) (1220ms)
+    ✔ 6. Claims Spoils, Burns DAO Share, and Transfers Governance (240ms)
+
+  6 passing (2.1s)

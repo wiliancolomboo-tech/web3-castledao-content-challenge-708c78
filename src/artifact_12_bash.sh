@@ -1,0 +1,1 @@
+ls -lh target/deploy/castle_dao.so
